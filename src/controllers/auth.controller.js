@@ -2,6 +2,7 @@ const User = require('../models/User.model');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const  transporter  = require('../config/mail');
+const crypto = require('crypto');
 
 const register = async (req, res) => {
   try {
@@ -71,4 +72,98 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login };
+const forgotPassword = async( req, res ) => {
+  try {
+    const  {email}  = req.body;
+    if(!email || email.trim() == "") return res.status(400).json({
+      message : "Missing input"
+    })
+    const user = await User.findOne({email})
+    if( !user )  return res.status(404).json({
+      message : "Cant not find user"
+      }
+    )
+
+    // create token reset password
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // save token and expiry time in DB (15 min)
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000 //15 min
+    try {
+      const updateUser = await user.save();
+      console.log("Update resetPasswordToken and resetPassWordExpires success", updateUser)
+    } catch (error) {
+      console.log(error)
+    }
+
+    // link reset password 
+    const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`
+
+    // send email
+    const mailOptions = {
+      form : `"Your App" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: 'Đặt lại mật khẩu',
+      html: `
+        <h3>Xin chào ${user.username},</h3>
+        <p>Bạn đã yêu cầu đặt lại mật khẩu. Vui lòng nhấn vào link bên dưới để đặt lại mật khẩu:</p>
+        <a href="${resetLink}" target="_blank">${resetLink}</a>
+        <p>Link này sẽ hết hạn trong 15 phút.</p>
+      ` 
+    }
+
+    try {
+      const sendMail = await transporter.sendMail(mailOptions);
+      console.log(sendMail.response)
+    } catch (error) {
+      console.log(error)
+    }
+
+
+      
+      
+    res.json({message : "Email đặt lại mật khẩu đã được gửi!"})
+  } catch (error) {
+    console.log(error)
+  }
+}
+
+
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    // check token
+    const user = await User.findOne({
+      resetPasswordExpires: { $gt: Date.now() },
+      resetPasswordToken: token
+    })
+
+    if(!user) return res.status(400).json({
+      message : "Invalid token or exprired token"
+    })
+
+    // Update new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+
+    // delete token after reset success
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    // save
+    await user.save();
+
+    res.json({
+      message: "Updated password"
+    })
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({
+      message : "Something went wrong"
+    })
+  }
+}
+
+module.exports = { register, login ,   forgotPassword , resetPassword};

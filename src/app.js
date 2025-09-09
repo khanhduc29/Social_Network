@@ -10,7 +10,8 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // parse JSON body
+app.use(express.urlencoded({ extended: true })); // parse form data
 app.use(morgan('dev'));
 
 // Routes
