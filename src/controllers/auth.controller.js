@@ -61,14 +61,55 @@ const login = async (req, res) => {
     if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { id: user._id, email: user.email , role : user.role , avatar: user.avatar},
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    res.json({ message: 'Login successful', token });
+    // res.json({ message: 'Login successful', token });
+     res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // true nếu deploy https
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+    });
+
+    res.json({ message: "Login successful" });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+const logout = (req, res) => {
+  try {
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+    res.json({ message: "Logout successful" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
+
+const me = async (req, res) => {
+  try {
+    const token = req.cookies.token; // lấy token từ cookie
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -129,7 +170,6 @@ const forgotPassword = async( req, res ) => {
   }
 }
 
-
 const resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
@@ -166,4 +206,4 @@ const resetPassword = async (req, res) => {
   }
 }
 
-module.exports = { register, login ,   forgotPassword , resetPassword};
+module.exports = { register, login ,   forgotPassword , resetPassword , logout , me};
